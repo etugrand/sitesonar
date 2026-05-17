@@ -15,8 +15,7 @@ const plugin: FastifyPluginAsync<AuthOptions> = async (app, opts) => {
     if (
       req.url === '/health' ||
       req.url === '/healthz' ||
-      req.url.startsWith('/docs') ||
-      req.url === '/openapi.json'
+      req.url.startsWith('/docs')
     ) {
       return;
     }
