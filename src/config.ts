@@ -1,0 +1,55 @@
+import { z } from 'zod';
+
+const csv = (raw: string | undefined): string[] =>
+  raw
+    ? raw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
+
+const ConfigSchema = z.object({
+  port: z.coerce.number().int().positive().default(8080),
+  host: z.string().default('0.0.0.0'),
+  logLevel: z
+    .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace'])
+    .default('info'),
+  apiKeys: z.array(z.string().min(8)).min(1, 'At least one API key required'),
+  corsOrigins: z.array(z.string()).default(['*']),
+  crawlMaxRequests: z.coerce.number().int().positive().default(50),
+  crawlDefaultConcurrency: z.coerce.number().int().positive().default(5),
+  scrapeTimeoutMs: z.coerce.number().int().positive().default(30_000),
+  auditTimeoutMs: z.coerce.number().int().positive().default(90_000),
+  screenshotTimeoutMs: z.coerce.number().int().positive().default(20_000),
+  browserPoolSize: z.coerce.number().int().positive().default(3),
+  crawleeStorageDir: z.string().default('/tmp/crawlee'),
+});
+
+export type Config = z.infer<typeof ConfigSchema>;
+
+export function loadConfig(): Config {
+  const parsed = ConfigSchema.safeParse({
+    port: process.env.PORT,
+    host: process.env.HOST,
+    logLevel: process.env.LOG_LEVEL,
+    apiKeys: csv(process.env.API_KEYS),
+    corsOrigins: csv(process.env.CORS_ORIGINS),
+    crawlMaxRequests: process.env.CRAWL_MAX_REQUESTS,
+    crawlDefaultConcurrency: process.env.CRAWL_DEFAULT_CONCURRENCY,
+    scrapeTimeoutMs: process.env.SCRAPE_TIMEOUT_MS,
+    auditTimeoutMs: process.env.AUDIT_TIMEOUT_MS,
+    screenshotTimeoutMs: process.env.SCREENSHOT_TIMEOUT_MS,
+    browserPoolSize: process.env.BROWSER_POOL_SIZE,
+    crawleeStorageDir: process.env.CRAWLEE_STORAGE_DIR,
+  });
+
+  if (!parsed.success) {
+    const issues = parsed.error.issues
+      .map((i) => `  - ${i.path.join('.')}: ${i.message}`)
+      .join('\n');
+    throw new Error(`Invalid configuration:\n${issues}`);
+  }
+
+  process.env.CRAWLEE_STORAGE_DIR = parsed.data.crawleeStorageDir;
+  return parsed.data;
+}
