@@ -35,19 +35,36 @@ export interface JobStoreFactoryOptions {
   logger: LoggerLike;
 }
 
+function maskRedisUrl(url: string): string {
+  return url.replace(/:[^:@/]*@/, ':***@');
+}
+
 /**
  * Pick a JobStore implementation based on whether REDIS_URL is configured.
  * In-memory store is the default — fine for single-instance, low-volume use.
  * Redis-backed store survives restarts and supports multi-replica deploys.
+ *
+ * If REDIS_URL is set but unreachable, falls back to in-memory rather than
+ * killing startup — jobs lose persistence until Redis returns, but the rest
+ * of the API stays available. A loud warning is logged so this isn't silent.
  */
 export async function createJobStore(opts: JobStoreFactoryOptions): Promise<JobStore> {
-  if (opts.redisUrl) {
-    const store = await RedisJobStore.connect(opts.redisUrl, opts.jobTtlSeconds, opts.logger);
-    opts.logger.info(`Job store: Redis (${opts.redisUrl.replace(/:[^:@]*@/, ':***@')})`);
-    return store;
+  if (!opts.redisUrl) {
+    opts.logger.info('Job store: in-memory (ephemeral; set REDIS_URL for persistence)');
+    return new InMemoryJobStore();
   }
-  opts.logger.info('Job store: in-memory (ephemeral; set REDIS_URL for persistence)');
-  return new InMemoryJobStore();
+  const masked = maskRedisUrl(opts.redisUrl);
+  try {
+    const store = await RedisJobStore.connect(opts.redisUrl, opts.jobTtlSeconds, opts.logger);
+    opts.logger.info(`Job store: Redis (${masked})`);
+    return store;
+  } catch (err) {
+    opts.logger.warn(
+      { err, url: masked },
+      'REDIS_URL set but Redis is unreachable — falling back to in-memory job store. Jobs will not survive restarts until Redis returns.',
+    );
+    return new InMemoryJobStore();
+  }
 }
 
 /**
@@ -140,10 +157,22 @@ export class RedisJobStore implements JobStore {
   ): Promise<RedisJobStore> {
     const redis = new Redis(url, {
       lazyConnect: true,
-      maxRetriesPerRequest: 3,
+      connectTimeout: 5000,
+      maxRetriesPerRequest: 2,
+      // No auto-reconnect storm: if we lose the connection later, ioredis
+      // will still retry per-command via maxRetriesPerRequest. We just don't
+      // want an infinite reconnect loop spamming the logs.
+      retryStrategy: (times) => (times > 3 ? null : Math.min(times * 200, 1000)),
     });
     redis.on('error', (err) => logger.warn({ err }, 'redis error'));
-    await redis.connect();
+    try {
+      await redis.connect();
+    } catch (err) {
+      // Clean up the half-open socket before bubbling the error up so the
+      // factory can decide whether to fall back to in-memory.
+      redis.disconnect();
+      throw err;
+    }
     return new RedisJobStore(redis, ttlSeconds, logger);
   }
 
