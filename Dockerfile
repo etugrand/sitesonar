@@ -1,6 +1,10 @@
 # Playwright's official image ships Chromium + system fonts + system deps,
-# which saves ~5 minutes of apt install pain. Pinned by major version.
-FROM mcr.microsoft.com/playwright:v1.49.1-noble AS builder
+# which saves ~5 minutes of apt install pain.
+#
+# IMPORTANT: this version MUST match the `playwright` version in package.json
+# exactly. The image bakes in a specific Chromium build; a mismatch means
+# Playwright can't find the browser binary at runtime.
+FROM mcr.microsoft.com/playwright:v1.60.0-noble AS builder
 
 ENV NODE_ENV=production \
     CRAWLEE_STORAGE_DIR=/tmp/crawlee
@@ -18,7 +22,7 @@ RUN npm run build \
     && npm prune --omit=dev
 
 
-FROM mcr.microsoft.com/playwright:v1.49.1-noble
+FROM mcr.microsoft.com/playwright:v1.60.0-noble
 
 ENV NODE_ENV=production \
     CRAWLEE_STORAGE_DIR=/tmp/crawlee \
