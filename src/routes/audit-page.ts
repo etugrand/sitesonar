@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import type { BrowserPool } from '../browser.js';
 import type { Config } from '../config.js';
-import { extractMetadata } from '../services/extract.js';
+import { extractMetadata, filterResponseHeaders } from '../services/extract.js';
 import { analyzeStructuredData } from '../services/schema.js';
 import { runLighthouse, type LighthousePreset } from '../services/lighthouse.js';
 
@@ -54,6 +54,7 @@ export const auditPageRoutes =
         let html: string;
         let finalUrl: string;
         let status: number | null;
+        let rawHeaders: Record<string, string> | undefined;
         try {
           const page = await context.newPage();
           const response = await page.goto(body.url, {
@@ -63,6 +64,7 @@ export const auditPageRoutes =
           html = await page.content();
           finalUrl = page.url();
           status = response ? response.status() : null;
+          rawHeaders = response?.headers();
         } catch (err) {
           req.log.warn({ err }, 'audit render failed');
           return reply.code(502).send({
@@ -74,6 +76,7 @@ export const auditPageRoutes =
         }
 
         const metadata = extractMetadata(html, finalUrl);
+        metadata.responseHeaders = filterResponseHeaders(rawHeaders);
         const structuredData = await analyzeStructuredData(html);
 
         // 2. Lighthouse (separate Chrome instance to avoid stomping on our pool).

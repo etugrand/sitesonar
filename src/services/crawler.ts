@@ -1,5 +1,10 @@
 import { PlaywrightCrawler, RequestQueue, type PlaywrightCrawlingContext } from 'crawlee';
-import { extractMetadata, type PageMetadata } from './extract.js';
+import {
+  emptyResponseHeaders,
+  extractMetadata,
+  filterResponseHeaders,
+  type PageMetadata,
+} from './extract.js';
 import type { PlaywrightProxy } from '../proxy.js';
 
 export interface CrawlPage {
@@ -40,6 +45,10 @@ function emptyMetadata(): PageMetadata {
     headings: { h1: [], h2: [], h3: [] },
     links: { internal: 0, external: 0, nofollow: 0 },
     images: { total: 0, missingAlt: 0 },
+    imageList: [],
+    linkList: [],
+    responseHeaders: emptyResponseHeaders(),
+    listsTruncated: { images: false, links: false },
   };
 }
 
@@ -74,6 +83,7 @@ export async function runCrawl(opts: CrawlOptions): Promise<CrawlResult> {
       const status = response ? response.status() : null;
       const html = await page.content();
       const metadata = extractMetadata(html, request.url);
+      metadata.responseHeaders = filterResponseHeaders(response?.headers());
 
       const anchors = await page.locator('a[href]').all();
       const outbound: string[] = [];

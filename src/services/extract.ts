@@ -1,6 +1,57 @@
 import * as cheerio from 'cheerio';
 import TurndownService from 'turndown';
 
+export interface ImageDetail {
+  src: string;
+  alt: string;
+  width: string | null;
+  height: string | null;
+  loading: string | null;
+  fetchpriority: string | null;
+}
+
+export interface LinkDetail {
+  href: string;
+  text: string;
+  rel: string;
+  type: 'internal' | 'external';
+  nofollow: boolean;
+  target: string | null;
+}
+
+/**
+ * Whitelisted response headers surfaced on PageMetadata. Headers checked-and-
+ * missing are returned as null so consumers can distinguish "absent" from
+ * "we didn't look." Keep this list focused on SEO and security signals —
+ * dumping every header would blow up the payload and leak ops info.
+ */
+export const HEADER_WHITELIST = [
+  'content-type',
+  'cache-control',
+  'expires',
+  'etag',
+  'last-modified',
+  'vary',
+  'strict-transport-security',
+  'content-security-policy',
+  'x-frame-options',
+  'x-content-type-options',
+  'x-xss-protection',
+  'referrer-policy',
+  'permissions-policy',
+  'cross-origin-opener-policy',
+  'cross-origin-resource-policy',
+  'cross-origin-embedder-policy',
+  'server',
+  'x-powered-by',
+  'link',
+] as const;
+
+export type ResponseHeaders = Record<(typeof HEADER_WHITELIST)[number], string | null>;
+
+export const IMAGE_LIST_CAP = 500;
+export const LINK_LIST_CAP = 1000;
+
 export interface PageMetadata {
   title: string | null;
   description: string | null;
@@ -24,6 +75,42 @@ export interface PageMetadata {
     total: number;
     missingAlt: number;
   };
+  /** First IMAGE_LIST_CAP <img> elements with src resolved against finalUrl. */
+  imageList: ImageDetail[];
+  /** First LINK_LIST_CAP <a href> elements with href resolved + internal/external classified. */
+  linkList: LinkDetail[];
+  /** Whitelisted response headers from the HTTP fetch; null = checked & absent. */
+  responseHeaders: ResponseHeaders;
+  /** True when imageList or linkList was truncated by the per-page cap. */
+  listsTruncated: { images: boolean; links: boolean };
+}
+
+/**
+ * Build an empty ResponseHeaders record with every whitelisted key set to null.
+ * Used for the no-response case (e.g. crawler failedRequestHandler) and as the
+ * starting point for filterResponseHeaders.
+ */
+export function emptyResponseHeaders(): ResponseHeaders {
+  const out = {} as ResponseHeaders;
+  for (const h of HEADER_WHITELIST) out[h] = null;
+  return out;
+}
+
+/**
+ * Filter a raw response header map down to the whitelist. Header names are
+ * compared case-insensitively (Playwright already lowercases, but be defensive).
+ */
+export function filterResponseHeaders(
+  raw: Record<string, string> | null | undefined,
+): ResponseHeaders {
+  const out = emptyResponseHeaders();
+  if (!raw) return out;
+  const lc: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw)) lc[k.toLowerCase()] = v;
+  for (const h of HEADER_WHITELIST) {
+    if (lc[h] !== undefined) out[h] = lc[h];
+  }
+  return out;
 }
 
 export function extractMetadata(html: string, pageUrl: string): PageMetadata {
@@ -59,21 +146,74 @@ export function extractMetadata(html: string, pageUrl: string): PageMetadata {
   let internal = 0;
   let external = 0;
   let nofollow = 0;
+  const linkList: LinkDetail[] = [];
+  let linksTruncated = false;
   $('a[href]').each((_, el) => {
-    const href = $(el).attr('href');
-    if (!href) return;
-    if (($(el).attr('rel') ?? '').includes('nofollow')) nofollow += 1;
+    const rawHref = $(el).attr('href');
+    if (!rawHref) return;
+    const rel = ($(el).attr('rel') ?? '').trim();
+    const isNofollow = rel.includes('nofollow');
+    if (isNofollow) nofollow += 1;
+    let absolute: string;
+    let type: 'internal' | 'external';
     try {
-      const abs = new URL(href, pageUrl);
-      if (origin && abs.origin === origin) internal += 1;
+      const abs = new URL(rawHref, pageUrl);
+      absolute = abs.toString();
+      type = origin && abs.origin === origin ? 'internal' : 'external';
+      if (type === 'internal') internal += 1;
       else external += 1;
     } catch {
-      // ignore invalid hrefs (mailto:, tel:, anchors)
+      // skip mailto:, tel:, javascript:, anchor-only, etc.
+      return;
+    }
+    if (linkList.length < LINK_LIST_CAP) {
+      linkList.push({
+        href: absolute,
+        text: $(el).text().trim(),
+        rel,
+        type,
+        nofollow: isNofollow,
+        target: $(el).attr('target') ?? null,
+      });
+    } else {
+      linksTruncated = true;
     }
   });
 
   const imgs = $('img');
-  const missingAlt = imgs.filter((_, el) => !($(el).attr('alt') ?? '').trim()).length;
+  let missingAlt = 0;
+  const imageList: ImageDetail[] = [];
+  let imagesTruncated = false;
+  imgs.each((_, el) => {
+    const alt = ($(el).attr('alt') ?? '').trim();
+    if (!alt) missingAlt += 1;
+    if (imageList.length >= IMAGE_LIST_CAP) {
+      imagesTruncated = true;
+      return;
+    }
+    // Prefer src; fall back to common lazy-load attrs so the list isn't empty
+    // on pages that defer image loading via data-src.
+    const rawSrc =
+      $(el).attr('src') ??
+      $(el).attr('data-src') ??
+      $(el).attr('data-lazy-src') ??
+      null;
+    if (!rawSrc) return;
+    let absoluteSrc: string;
+    try {
+      absoluteSrc = new URL(rawSrc, pageUrl).toString();
+    } catch {
+      return;
+    }
+    imageList.push({
+      src: absoluteSrc,
+      alt,
+      width: $(el).attr('width') ?? null,
+      height: $(el).attr('height') ?? null,
+      loading: $(el).attr('loading') ?? null,
+      fetchpriority: $(el).attr('fetchpriority') ?? null,
+    });
+  });
 
   return {
     title: $('title').first().text().trim() || null,
@@ -91,6 +231,10 @@ export function extractMetadata(html: string, pageUrl: string): PageMetadata {
     },
     links: { internal, external, nofollow },
     images: { total: imgs.length, missingAlt },
+    imageList,
+    linkList,
+    responseHeaders: emptyResponseHeaders(),
+    listsTruncated: { images: imagesTruncated, links: linksTruncated },
   };
 }
 

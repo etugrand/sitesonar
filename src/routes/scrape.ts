@@ -2,7 +2,11 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import type { BrowserPool } from '../browser.js';
 import type { Config } from '../config.js';
-import { extractMetadata, htmlToMarkdown } from '../services/extract.js';
+import {
+  extractMetadata,
+  filterResponseHeaders,
+  htmlToMarkdown,
+} from '../services/extract.js';
 
 const ScrapeBody = z.object({
   url: z.string().url(),
@@ -77,6 +81,7 @@ export const scrapeRoutes =
           const finalUrl = page.url();
           const status = response ? response.status() : null;
           const metadata = extractMetadata(html, finalUrl);
+          metadata.responseHeaders = filterResponseHeaders(response?.headers());
 
           return {
             url: body.url,
