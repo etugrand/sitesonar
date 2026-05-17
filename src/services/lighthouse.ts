@@ -1,5 +1,22 @@
 import { launch, type LaunchedChrome } from 'chrome-launcher';
 import lighthouseImport from 'lighthouse';
+import { chromium } from 'playwright';
+
+/**
+ * Lighthouse spawns its own Chrome via chrome-launcher, which searches
+ * /usr/bin/google-chrome, /usr/bin/chromium, etc. The Playwright Docker
+ * image ships Chromium at a version-pinned path under /ms-playwright/, so
+ * chrome-launcher's standard search fails with "CHROME_PATH must be set".
+ *
+ * Rather than hardcode the path in the Dockerfile (which would drift with
+ * every Playwright version bump), we ask Playwright for its own bundled
+ * Chromium binary at runtime. CHROME_PATH env var still wins if set, so
+ * deployments can override.
+ */
+function resolveChromePath(): string {
+  if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
+  return chromium.executablePath();
+}
 
 // Lighthouse's main export is a function but is shaped oddly under ESM.
 // Coerce to the documented signature.
@@ -72,6 +89,7 @@ export async function runLighthouse(
   let chrome: LaunchedChrome | null = null;
   try {
     chrome = await launch({
+      chromePath: resolveChromePath(),
       chromeFlags: [
         '--headless=new',
         '--no-sandbox',
