@@ -7,6 +7,9 @@ import {
   filterResponseHeaders,
   htmlToMarkdown,
 } from '../services/extract.js';
+import { canonicalContent, trackChanges } from '../diff.js';
+import type { KvStore } from '../kvstore.js';
+import { hashApiKey } from '../ratelimit.js';
 
 const ScrapeBody = z.object({
   url: z.string().url(),
@@ -18,11 +21,19 @@ const ScrapeBody = z.object({
   includeMarkdown: z.boolean().default(true),
   userAgent: z.string().optional(),
   timeoutMs: z.number().int().positive().max(120_000).optional(),
+  trackChanges: z.boolean().default(false),
 });
 
 interface ScrapeDeps {
   browser: BrowserPool;
   config: Config;
+  kv: KvStore;
+}
+
+function bearerToken(authHeader: string | undefined): string | null {
+  if (!authHeader) return null;
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  return match ? match[1]! : null;
 }
 
 export const scrapeRoutes =
@@ -51,6 +62,12 @@ export const scrapeRoutes =
               includeMarkdown: { type: 'boolean', default: true },
               userAgent: { type: 'string' },
               timeoutMs: { type: 'integer', minimum: 1, maximum: 120_000 },
+              trackChanges: {
+                type: 'boolean',
+                default: false,
+                description:
+                  'When true, the response includes a `diff` block with a content hash and a changed flag (true/false/null). Hashes are scoped per API key and retained for DIFF_TTL_DAYS days.',
+              },
             },
           },
         },
@@ -83,13 +100,33 @@ export const scrapeRoutes =
           const metadata = extractMetadata(html, finalUrl);
           metadata.responseHeaders = filterResponseHeaders(response?.headers());
 
+          // Markdown is computed once and reused for both the response
+          // payload (when caller asked) and the diff hash (when tracking).
+          const needMarkdown = body.includeMarkdown || body.trackChanges;
+          const markdown = needMarkdown ? htmlToMarkdown(html) : '';
+
+          let diff: Awaited<ReturnType<typeof trackChanges>> | null = null;
+          if (body.trackChanges) {
+            const token = bearerToken(req.headers.authorization);
+            if (token) {
+              diff = await trackChanges({
+                kv: deps.kv,
+                keyId: hashApiKey(token),
+                url: finalUrl,
+                content: canonicalContent(metadata.title, metadata.description, markdown),
+                ttlSeconds: deps.config.diffTtlDays * 86_400,
+              });
+            }
+          }
+
           return {
             url: body.url,
             finalUrl,
             status,
             metadata,
-            ...(body.includeMarkdown ? { markdown: htmlToMarkdown(html) } : {}),
+            ...(body.includeMarkdown ? { markdown } : {}),
             ...(body.includeHtml ? { html } : {}),
+            ...(diff ? { diff } : {}),
             fetchedAt: new Date().toISOString(),
           };
         } catch (err) {

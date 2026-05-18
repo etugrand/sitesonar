@@ -118,7 +118,7 @@ async function main(): Promise<void> {
 
   // Routes
   await app.register(healthRoutes({ jobs, startedAt }));
-  await app.register(scrapeRoutes({ browser, config }));
+  await app.register(scrapeRoutes({ browser, config, kv }));
   await app.register(screenshotRoutes({ browser, config }));
   await app.register(auditPageRoutes({ browser, config }));
   await app.register(crawlRoutes({ jobs, config }));
@@ -126,7 +126,7 @@ async function main(): Promise<void> {
   await app.register(securityRoutes({ config }));
   await app.register(robotsRoutes({ config }));
   await app.register(sitemapRoutes({ config }));
-  await app.register(extractRoutes({ browser, config }));
+  await app.register(extractRoutes({ browser, config, kv }));
   await app.register(techRoutes({ browser, config }));
   await app.register(usageRoutes({ kv, limitPerMin: config.rateLimitPerMin }));
 
