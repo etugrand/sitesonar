@@ -14,7 +14,6 @@ interface RobotsDeps {
 }
 
 function normalizeUrl(input: string): string {
-  if (input.endsWith('/robots.txt')) return input;
   const u = new URL(input);
   u.pathname = '/robots.txt';
   u.search = '';

@@ -39,10 +39,15 @@ export function parseRobots(
 ): ParsedRobots {
   const raw = text.length > MAX_RAW_BYTES ? text.slice(0, MAX_RAW_BYTES) : text;
 
-  const lines = text.split(/\r?\n/);
+  const lines = raw.split(/\r?\n/);
   const rules: RobotsRule[] = [];
   const sitemaps: string[] = [];
-  let current: RobotsRule | null = null;
+
+  // Pending UAs that haven't yet been bound to a directive block.
+  let pendingUserAgents: string[] = [];
+  // The directive block currently being filled. Bound to pendingUserAgents only
+  // on the first directive line that arrives after a UA stack.
+  let activeRules: RobotsRule[] | null = null;
 
   for (const rawLine of lines) {
     const line = rawLine.replace(/#.*$/, '').trim();
@@ -54,27 +59,42 @@ export function parseRobots(
     if (!value && key !== 'user-agent') continue;
 
     if (key === 'user-agent') {
-      if (current) {
-        rules.push(current);
+      if (activeRules) {
+        // Directives ended for the prior block; start a new UA stack.
+        rules.push(...activeRules);
+        activeRules = null;
+        pendingUserAgents = [];
       }
-      current = { userAgent: value, allow: [], disallow: [], crawlDelay: null };
-    } else if (key === 'disallow') {
-      if (current) current.disallow.push(value);
-    } else if (key === 'allow') {
-      if (current) current.allow.push(value);
-    } else if (key === 'crawl-delay') {
-      const n = parseInt(value, 10);
-      if (current && !Number.isNaN(n)) current.crawlDelay = n;
+      pendingUserAgents.push(value);
     } else if (key === 'sitemap') {
       sitemaps.push(value);
+    } else {
+      // Any directive (disallow/allow/crawl-delay/etc.) binds the pending UAs.
+      if (activeRules === null) {
+        if (pendingUserAgents.length === 0) continue; // directive with no preceding UA, ignore
+        activeRules = pendingUserAgents.map((ua) => ({
+          userAgent: ua,
+          allow: [],
+          disallow: [],
+          crawlDelay: null,
+        }));
+      }
+      if (key === 'disallow') {
+        for (const r of activeRules) r.disallow.push(value);
+      } else if (key === 'allow') {
+        for (const r of activeRules) r.allow.push(value);
+      } else if (key === 'crawl-delay') {
+        const n = parseInt(value, 10);
+        if (!Number.isNaN(n)) for (const r of activeRules) r.crawlDelay = n;
+      }
     }
   }
-  if (current) rules.push(current);
+  if (activeRules) rules.push(...activeRules);
 
   const result: ParsedRobots = { rules, sitemaps, raw };
 
   if (effectiveUserAgent) {
-    const parser = (robotsParser as unknown as RobotsParserFn)(url, text);
+    const parser = (robotsParser as unknown as RobotsParserFn)(url, raw);
     const match = pickMatchingRule(rules, effectiveUserAgent);
     result.effectiveRules = {
       userAgent: effectiveUserAgent,

@@ -45,4 +45,27 @@ describe('parseRobots', () => {
       'https://example.com/news-sitemap.xml',
     ]);
   });
+
+  it('handles stacked User-agent lines sharing one directive block', () => {
+    const result = parseRobots(
+      fixture('stacked-ua.txt'),
+      'https://example.com/robots.txt',
+    );
+    const uaNames = result.rules.map((r) => r.userAgent);
+    expect(uaNames).toEqual(['Googlebot', 'Bingbot', '*']);
+    const googlebot = result.rules.find((r) => r.userAgent === 'Googlebot');
+    const bingbot = result.rules.find((r) => r.userAgent === 'Bingbot');
+    expect(googlebot?.disallow).toEqual(['/admin/']);
+    expect(googlebot?.crawlDelay).toBe(2);
+    expect(bingbot?.disallow).toEqual(['/admin/']);
+    expect(bingbot?.crawlDelay).toBe(2);
+  });
+
+  it('strips comment lines and handles CRLF line endings', () => {
+    const raw = '# leading comment\r\nUser-agent: *\r\n# inline-area\r\nDisallow: /admin/ # tail-comment\r\nSitemap: https://example.com/sitemap.xml';
+    const result = parseRobots(raw, 'https://example.com/robots.txt');
+    expect(result.rules).toHaveLength(1);
+    expect(result.rules[0]!.disallow).toEqual(['/admin/']);
+    expect(result.sitemaps).toEqual(['https://example.com/sitemap.xml']);
+  });
 });
