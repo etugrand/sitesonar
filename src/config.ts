@@ -21,7 +21,7 @@ const ConfigSchema = z.object({
   scrapeTimeoutMs: z.coerce.number().int().positive().default(30_000),
   auditTimeoutMs: z.coerce.number().int().positive().default(90_000),
   screenshotTimeoutMs: z.coerce.number().int().positive().default(20_000),
-  browserPoolSize: z.coerce.number().int().positive().default(3),
+  browserPoolSize: z.coerce.number().int().positive().default(8),
   crawleeStorageDir: z.string().default('/tmp/crawlee'),
   proxyUrl: z
     .string()
