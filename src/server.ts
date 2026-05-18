@@ -18,6 +18,9 @@ import { robotsRoutes } from './routes/robots.js';
 import { sitemapRoutes } from './routes/sitemap.js';
 import { extractRoutes } from './routes/extract.js';
 import { techRoutes } from './routes/tech.js';
+import { createKvStore, type KvStore } from './kvstore.js';
+import { rateLimitPlugin } from './ratelimit.js';
+import { usageRoutes } from './routes/usage.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -88,6 +91,18 @@ async function main(): Promise<void> {
   // Auth
   await app.register(authPlugin, { apiKeys: config.apiKeys });
 
+  // KV store (rate limit + diff) — falls back to in-memory if Redis missing.
+  const kv: KvStore = await createKvStore({
+    redisUrl: config.redisUrl,
+    logger: app.log,
+  });
+
+  // Rate limiting (must register after authPlugin so 401 wins over 429).
+  await app.register(rateLimitPlugin, {
+    kv,
+    limitPerMin: config.rateLimitPerMin,
+  });
+
   // Shared state
   const proxy = deriveProxy(config);
   if (proxy) app.log.info(`Outbound proxy: ${proxy.server}`);
@@ -113,6 +128,7 @@ async function main(): Promise<void> {
   await app.register(sitemapRoutes({ config }));
   await app.register(extractRoutes({ browser, config }));
   await app.register(techRoutes({ browser, config }));
+  await app.register(usageRoutes({ kv, limitPerMin: config.rateLimitPerMin }));
 
   // Lifecycle
   const shutdown = async (signal: string): Promise<void> => {
@@ -121,6 +137,7 @@ async function main(): Promise<void> {
       await app.close();
       await browser.stop();
       await jobs.close?.();
+      await kv.close?.();
       process.exit(0);
     } catch (err) {
       app.log.error({ err }, 'Error during shutdown');

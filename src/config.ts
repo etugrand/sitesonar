@@ -57,6 +57,7 @@ const ConfigSchema = z.object({
   sitemapTimeoutMs: z.coerce.number().int().positive().default(15_000),
   extractTimeoutMs: z.coerce.number().int().positive().default(30_000),
   techTimeoutMs: z.coerce.number().int().positive().default(30_000),
+  rateLimitPerMin: z.coerce.number().int().positive().default(60),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -95,6 +96,7 @@ export function loadConfig(): Config {
     sitemapTimeoutMs: process.env.SITEMAP_TIMEOUT_MS,
     extractTimeoutMs: process.env.EXTRACT_TIMEOUT_MS,
     techTimeoutMs: process.env.TECH_TIMEOUT_MS,
+    rateLimitPerMin: process.env.RATE_LIMIT_PER_MIN,
   });
 
   if (!parsed.success) {
