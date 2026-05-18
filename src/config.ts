@@ -56,6 +56,7 @@ const ConfigSchema = z.object({
   robotsTimeoutMs: z.coerce.number().int().positive().default(10_000),
   sitemapTimeoutMs: z.coerce.number().int().positive().default(15_000),
   extractTimeoutMs: z.coerce.number().int().positive().default(30_000),
+  techTimeoutMs: z.coerce.number().int().positive().default(30_000),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -93,6 +94,7 @@ export function loadConfig(): Config {
     robotsTimeoutMs: process.env.ROBOTS_TIMEOUT_MS,
     sitemapTimeoutMs: process.env.SITEMAP_TIMEOUT_MS,
     extractTimeoutMs: process.env.EXTRACT_TIMEOUT_MS,
+    techTimeoutMs: process.env.TECH_TIMEOUT_MS,
   });
 
   if (!parsed.success) {

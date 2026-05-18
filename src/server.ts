@@ -17,6 +17,7 @@ import { securityRoutes } from './routes/security.js';
 import { robotsRoutes } from './routes/robots.js';
 import { sitemapRoutes } from './routes/sitemap.js';
 import { extractRoutes } from './routes/extract.js';
+import { techRoutes } from './routes/tech.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -61,6 +62,7 @@ async function main(): Promise<void> {
         { name: 'security', description: 'HTTP security headers grading' },
         { name: 'discovery', description: 'Sitemap and robots.txt parsing' },
         { name: 'extract', description: 'Readability article extraction' },
+        { name: 'tech', description: 'Technology stack fingerprinting' },
       ],
     },
   });
@@ -110,6 +112,7 @@ async function main(): Promise<void> {
   await app.register(robotsRoutes({ config }));
   await app.register(sitemapRoutes({ config }));
   await app.register(extractRoutes({ browser, config }));
+  await app.register(techRoutes({ browser, config }));
 
   // Lifecycle
   const shutdown = async (signal: string): Promise<void> => {
