@@ -239,7 +239,7 @@ export function extractMetadata(html: string, pageUrl: string): PageMetadata {
 }
 
 // Single Turndown instance — configuration is stateless across calls.
-const turndown = new TurndownService({
+export const turndown = new TurndownService({
   headingStyle: 'atx',
   hr: '---',
   bulletListMarker: '-',

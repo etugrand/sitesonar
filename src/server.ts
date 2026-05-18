@@ -16,6 +16,7 @@ import { searchRoutes } from './routes/search.js';
 import { securityRoutes } from './routes/security.js';
 import { robotsRoutes } from './routes/robots.js';
 import { sitemapRoutes } from './routes/sitemap.js';
+import { extractRoutes } from './routes/extract.js';
 
 async function main(): Promise<void> {
   const config = loadConfig();
@@ -59,6 +60,7 @@ async function main(): Promise<void> {
         { name: 'search', description: 'Web search through a provider chain' },
         { name: 'security', description: 'HTTP security headers grading' },
         { name: 'discovery', description: 'Sitemap and robots.txt parsing' },
+        { name: 'extract', description: 'Readability article extraction' },
       ],
     },
   });
@@ -107,6 +109,7 @@ async function main(): Promise<void> {
   await app.register(securityRoutes({ config }));
   await app.register(robotsRoutes({ config }));
   await app.register(sitemapRoutes({ config }));
+  await app.register(extractRoutes({ browser, config }));
 
   // Lifecycle
   const shutdown = async (signal: string): Promise<void> => {
