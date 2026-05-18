@@ -5,6 +5,7 @@ import type { Config } from '../config.js';
 import { extractMetadata, filterResponseHeaders } from '../services/extract.js';
 import { analyzeStructuredData } from '../services/schema.js';
 import { runLighthouse, type LighthousePreset } from '../services/lighthouse.js';
+import { gradeHeaders, type SecurityGrade } from '../services/security-headers.js';
 
 const AuditBody = z.object({
   url: z.string().url(),
@@ -77,6 +78,7 @@ export const auditPageRoutes =
 
         const metadata = extractMetadata(html, finalUrl);
         metadata.responseHeaders = filterResponseHeaders(rawHeaders);
+        const security: SecurityGrade = gradeHeaders(rawHeaders ?? {});
         const structuredData = await analyzeStructuredData(html);
 
         // 2. Lighthouse (separate Chrome instance to avoid stomping on our pool).
@@ -101,6 +103,7 @@ export const auditPageRoutes =
           status,
           preset: body.preset,
           metadata,
+          security,
           structuredData,
           lighthouse,
           lighthouseError,

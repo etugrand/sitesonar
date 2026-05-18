@@ -52,6 +52,7 @@ const ConfigSchema = z.object({
   serperApiKey: z.string().optional(),
   tavilyApiKey: z.string().optional(),
   searchTimeoutMs: z.coerce.number().int().positive().default(8_000),
+  securityTimeoutMs: z.coerce.number().int().positive().default(10_000),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -85,6 +86,7 @@ export function loadConfig(): Config {
     serperApiKey: process.env.SERPER_API_KEY,
     tavilyApiKey: process.env.TAVILY_API_KEY,
     searchTimeoutMs: process.env.SEARCH_TIMEOUT_MS,
+    securityTimeoutMs: process.env.SECURITY_TIMEOUT_MS,
   });
 
   if (!parsed.success) {
