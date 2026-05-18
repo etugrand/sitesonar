@@ -78,7 +78,7 @@ export const auditPageRoutes =
 
         const metadata = extractMetadata(html, finalUrl);
         metadata.responseHeaders = filterResponseHeaders(rawHeaders);
-        const security: SecurityGrade = gradeHeaders(rawHeaders ?? {});
+        const security: SecurityGrade | null = rawHeaders ? gradeHeaders(rawHeaders) : null;
         const structuredData = await analyzeStructuredData(html);
 
         // 2. Lighthouse (separate Chrome instance to avoid stomping on our pool).

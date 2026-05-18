@@ -49,4 +49,18 @@ describe('gradeHeaders', () => {
     expect(result.headers['server-info-leak']!.status).toBe('fail');
     expect(result.recommendations.some((r) => r.includes('Server'))).toBe(true);
   });
+
+  it('awards partial credit for HSTS with max-age under 6 months', () => {
+    const result = gradeHeaders({
+      'strict-transport-security': 'max-age=86400',
+    });
+    expect(result.headers['strict-transport-security']!.status).toBe('warn');
+    expect(result.headers['strict-transport-security']!.note).toContain('below 6 months');
+  });
+
+  it('warns when only one of Server/X-Powered-By is present', () => {
+    const result = gradeHeaders({ server: 'nginx/1.18.0' });
+    expect(result.headers['server-info-leak']!.status).toBe('warn');
+    expect(result.headers['server-info-leak']!.note).toContain('server');
+  });
 });

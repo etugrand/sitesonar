@@ -58,7 +58,7 @@ export const securityRoutes =
             url: body.url,
             finalUrl: response.url,
             status: response.status,
-            ...grade,
+            security: grade,
             fetchedAt: new Date().toISOString(),
           };
         } catch (err) {
