@@ -74,6 +74,22 @@ async function main(): Promise<void> {
     uiConfig: { docExpansion: 'list', deepLinking: true },
   });
 
+  // Expose the OpenAPI spec at the conventional /openapi.{json,yaml} paths
+  // in addition to the UI's /docs/json default. Hidden from the spec itself.
+  app.get(
+    '/openapi.json',
+    { schema: { hide: true } },
+    async () => app.swagger(),
+  );
+  app.get(
+    '/openapi.yaml',
+    { schema: { hide: true } },
+    async (_req, reply) => {
+      reply.type('application/yaml');
+      return app.swagger({ yaml: true });
+    },
+  );
+
   // CORS — minimal hand-rolled to avoid an extra dep.
   app.addHook('onRequest', async (req, reply) => {
     const origin = req.headers.origin;
