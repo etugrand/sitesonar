@@ -143,7 +143,7 @@ class JinaProvider implements SearchProvider {
       {
         method: 'POST',
         headers,
-        body: JSON.stringify({ q: q.query, num: q.num }),
+        body: JSON.stringify({ q: q.query, num: Math.min(q.num, 10) }),
       },
       signal,
     )) as {
