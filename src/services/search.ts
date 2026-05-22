@@ -1,6 +1,6 @@
 import type { Config } from '../config.js';
 
-export type ProviderName = 'searxng' | 'brave' | 'google' | 'serpapi' | 'serper' | 'tavily';
+export type ProviderName = 'searxng' | 'jina' | 'brave' | 'google' | 'serpapi' | 'serper' | 'tavily';
 
 export interface SearchQuery {
   query: string;
@@ -109,6 +109,65 @@ class SearxngProvider implements SearchProvider {
       organic,
       paa: [],
       related: data.suggestions ?? [],
+      features: emptyFeatures(),
+      totalResults: null,
+    };
+  }
+}
+
+// ─── Jina AI Search ────────────────────────────────────────────────────────
+// Free, keyless-friendly. Default rate limit is moderate; sending
+// `Authorization: Bearer <JINA_API_KEY>` raises it. `X-Respond-With: no-content`
+// returns SERP metadata only (Jina's default mode fetches each result page's
+// full content, which is wasteful and slow for our use case).
+// https://jina.ai/reader/  (search at https://s.jina.ai/)
+
+class JinaProvider implements SearchProvider {
+  readonly name = 'jina' as const;
+  constructor(private apiKey?: string) {}
+  // Works without a key, so this provider is always "configured". Users opt
+  // out by removing 'jina' from SEARCH_PROVIDERS.
+  isConfigured(): boolean {
+    return true;
+  }
+  async search(q: SearchQuery, signal: AbortSignal): Promise<SearchData> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      'X-Respond-With': 'no-content',
+    };
+    if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
+    if (q.lang) headers['X-Locale'] = q.lang;
+    const data = (await fetchJson(
+      'https://s.jina.ai/',
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ q: q.query, num: q.num }),
+      },
+      signal,
+    )) as {
+      code?: number;
+      message?: string;
+      data?: Array<{ title?: string; url?: string; description?: string }>;
+    };
+    // Jina sometimes returns HTTP 200 with a body-level error code.
+    if (data.code !== undefined && data.code !== 200) {
+      throw new Error(`Jina: code ${data.code}${data.message ? ` — ${data.message}` : ''}`);
+    }
+    const organic: OrganicResult[] = (data.data ?? [])
+      .slice(0, q.num)
+      .map((r, i) => ({
+        position: i + 1,
+        title: r.title ?? '',
+        link: r.url ?? '',
+        snippet: r.description ?? '',
+        displayLink: safeDisplayLink(r.url ?? ''),
+      }));
+    return {
+      organic,
+      paa: [],
+      related: [],
       features: emptyFeatures(),
       totalResults: null,
     };
@@ -430,6 +489,7 @@ class TavilyProvider implements SearchProvider {
 export function buildProviders(config: Config): SearchProvider[] {
   const all: Record<ProviderName, SearchProvider> = {
     searxng: new SearxngProvider(config.searxngUrl),
+    jina: new JinaProvider(config.jinaApiKey),
     brave: new BraveProvider(config.braveSearchApiKey),
     google: new GoogleCseProvider(config.googleSearchApiKey, config.googleSearchCx),
     serpapi: new SerpapiProvider(config.serpapiApiKey),

@@ -38,14 +38,15 @@ const ConfigSchema = z.object({
   // Search providers — comma-separated list defines the fallback order.
   // Each provider is only used if its credentials are configured below.
   searchProviders: z
-    .array(z.enum(['searxng', 'brave', 'google', 'serpapi', 'serper', 'tavily']))
-    .default(['searxng', 'brave', 'google', 'serpapi', 'serper', 'tavily']),
+    .array(z.enum(['searxng', 'jina', 'brave', 'google', 'serpapi', 'serper', 'tavily']))
+    .default(['searxng', 'jina', 'brave', 'google', 'serpapi', 'serper', 'tavily']),
   searxngUrl: z
     .string()
     .url()
     .optional()
     .or(z.literal('').transform(() => undefined)),
   braveSearchApiKey: z.string().optional(),
+  jinaApiKey: z.string().optional(),
   googleSearchApiKey: z.string().optional(),
   googleSearchCx: z.string().optional(),
   serpapiApiKey: z.string().optional(),
@@ -98,6 +99,7 @@ export function loadConfig(): Config {
       : undefined,
     searxngUrl: process.env.SEARXNG_URL ?? process.env.SEARCHXNG_URL,
     braveSearchApiKey: process.env.BRAVE_SEARCH_API_KEY,
+    jinaApiKey: process.env.JINA_API_KEY,
     googleSearchApiKey: process.env.GOOGLE_SEARCH_API_KEY,
     googleSearchCx: process.env.GOOGLE_SEARCH_CX,
     serpapiApiKey: process.env.SERPAPI_KEY,

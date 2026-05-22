@@ -15,7 +15,7 @@ const SearchBody = z.object({
   country: z.string().min(2).max(2).optional(),
   lang: z.string().min(2).max(5).optional(),
   engine: z
-    .enum(['searxng', 'brave', 'google', 'serpapi', 'serper', 'tavily'])
+    .enum(['searxng', 'jina', 'brave', 'google', 'serpapi', 'serper', 'tavily'])
     .optional(),
 });
 
@@ -36,7 +36,7 @@ export const searchRoutes =
       {
         schema: {
           description:
-            'Search the web through a free-first provider chain (SearXNG → Brave → Google CSE → Serper → Tavily by default). Falls through to the next provider on 4xx/5xx/timeout. Use `engine` to pin a specific provider and skip the chain.',
+            'Search the web through a free-first provider chain (SearXNG → Jina → Brave → Google CSE → SerpAPI → Serper → Tavily by default). Falls through to the next provider on 4xx/5xx/timeout. Use `engine` to pin a specific provider and skip the chain. Jina works keyless; set JINA_API_KEY to raise rate limits.',
           tags: ['search'],
           security: [{ bearerAuth: [] }],
           body: {
@@ -59,7 +59,7 @@ export const searchRoutes =
               },
               engine: {
                 type: 'string',
-                enum: ['searxng', 'brave', 'google', 'serpapi', 'serper', 'tavily'],
+                enum: ['searxng', 'jina', 'brave', 'google', 'serpapi', 'serper', 'tavily'],
                 description: 'Force a specific provider; otherwise the fallback chain runs.',
               },
             },
@@ -94,7 +94,7 @@ export const searchRoutes =
             return reply.code(503).send({
               error: 'no_providers_configured',
               message:
-                'No search providers are available. Configure at least one of SEARXNG_URL, BRAVE_SEARCH_API_KEY, GOOGLE_SEARCH_API_KEY+GOOGLE_SEARCH_CX, SERPAPI_KEY, SERPER_API_KEY, or TAVILY_API_KEY.',
+                'No search providers are available. Jina works keyless — include "jina" in SEARCH_PROVIDERS, or configure at least one of SEARXNG_URL, JINA_API_KEY, BRAVE_SEARCH_API_KEY, GOOGLE_SEARCH_API_KEY+GOOGLE_SEARCH_CX, SERPAPI_KEY, SERPER_API_KEY, or TAVILY_API_KEY.',
             });
           }
           if (err instanceof ProviderNotConfiguredError) {
