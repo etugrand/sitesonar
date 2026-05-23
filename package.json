@@ -4,6 +4,12 @@
   "private": true,
   "type": "module",
   "description": "Sitesonar — self-hosted scraping + SEO audit HTTP API. Playwright + Crawlee + Lighthouse behind Fastify.",
+  "license": "MIT",
+  "author": "Isaac Gounton",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/isaacgounton/sitesonar.git"
+  },
   "engines": {
     "node": ">=20.0.0"
   },
