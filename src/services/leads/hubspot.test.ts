@@ -82,4 +82,99 @@ describe('pushContacts', () => {
     expect(result.results[1]!).toMatchObject({ status: 'created', hubspotId: '777' });
     expect(searchCalled).toBe(true);
   });
+
+  it('auto-creates a missing type_contact option, then tags the contact', async () => {
+    let patched = false;
+    let sentProps: Record<string, string> = {};
+    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const u = String(url);
+      // Single-property GET/PATCH — check before the generic property list.
+      if (u.includes('/properties/contacts/type_contact')) {
+        if (init?.method === 'PATCH') {
+          patched = true;
+          return jsonResponse({}, 200);
+        }
+        return jsonResponse({ options: [{ label: 'Dentist', value: 'Dentist', displayOrder: 0 }] });
+      }
+      if (u.includes('/properties/contacts')) return jsonResponse({ results: [{ name: 'type_contact' }] });
+      if (u.includes('/contacts/search')) return jsonResponse({ results: [] });
+      if (u.includes('/objects/contacts')) {
+        sentProps = JSON.parse(String(init?.body)).properties;
+        return jsonResponse({ id: '900' }, 201);
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    const result = await pushContacts({
+      token: 'pat-x',
+      leads: [lead],
+      industry: 'immigration lawyer',
+      dryRun: false,
+      fetchImpl,
+    });
+    expect(result.created).toBe(1);
+    expect(patched).toBe(true);
+    expect(sentProps.type_contact).toBe('Immigration_Lawyer');
+  });
+
+  it('does not PATCH when the type_contact option already exists', async () => {
+    let patched = false;
+    let sentProps: Record<string, string> = {};
+    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes('/properties/contacts/type_contact')) {
+        if (init?.method === 'PATCH') {
+          patched = true;
+          return jsonResponse({}, 200);
+        }
+        return jsonResponse({
+          options: [{ label: 'Immigration Lawyer', value: 'Immigration_Lawyer', displayOrder: 0 }],
+        });
+      }
+      if (u.includes('/properties/contacts')) return jsonResponse({ results: [{ name: 'type_contact' }] });
+      if (u.includes('/contacts/search')) return jsonResponse({ results: [] });
+      if (u.includes('/objects/contacts')) {
+        sentProps = JSON.parse(String(init?.body)).properties;
+        return jsonResponse({ id: '901' }, 201);
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    const result = await pushContacts({
+      token: 'pat-x',
+      leads: [lead],
+      industry: 'immigration lawyer',
+      dryRun: false,
+      fetchImpl,
+    });
+    expect(result.created).toBe(1);
+    expect(patched).toBe(false);
+    expect(sentProps.type_contact).toBe('Immigration_Lawyer');
+  });
+
+  it('omits type_contact (but still creates the contact) when the option cannot be ensured', async () => {
+    let sentProps: Record<string, string> = {};
+    const fetchImpl = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      const u = String(url);
+      // Property GET fails (e.g. missing schema scope) -> cannot ensure option.
+      if (u.includes('/properties/contacts/type_contact')) return jsonResponse({}, 403);
+      if (u.includes('/properties/contacts')) return jsonResponse({ results: [{ name: 'type_contact' }] });
+      if (u.includes('/contacts/search')) return jsonResponse({ results: [] });
+      if (u.includes('/objects/contacts')) {
+        sentProps = JSON.parse(String(init?.body)).properties;
+        return jsonResponse({ id: '902' }, 201);
+      }
+      return jsonResponse({}, 404);
+    }) as unknown as typeof fetch;
+
+    const result = await pushContacts({
+      token: 'pat-x',
+      leads: [lead],
+      industry: 'immigration lawyer',
+      dryRun: false,
+      fetchImpl,
+    });
+    expect(result.created).toBe(1);
+    expect(sentProps.type_contact).toBeUndefined();
+  });
 });
