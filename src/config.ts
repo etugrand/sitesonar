@@ -72,6 +72,10 @@ const ConfigSchema = z.object({
     .array(z.enum(['hunter', 'apollo']))
     .default(['hunter', 'apollo']),
   companyTimeoutMs: z.coerce.number().int().positive().default(15_000),
+  hubspotToken: z.string().optional(),
+  leadsScrapeTimeoutMs: z.coerce.number().int().positive().default(120_000),
+  leadsEnrichTimeoutMs: z.coerce.number().int().positive().default(15_000),
+  leadsMaxResults: z.coerce.number().int().positive().default(120),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -125,6 +129,10 @@ export function loadConfig(): Config {
       ? csv(process.env.CONTACTS_PROVIDERS)
       : undefined,
     companyTimeoutMs: process.env.COMPANY_TIMEOUT_MS,
+    hubspotToken: process.env.HUBSPOT_TOKEN,
+    leadsScrapeTimeoutMs: process.env.LEADS_SCRAPE_TIMEOUT_MS,
+    leadsEnrichTimeoutMs: process.env.LEADS_ENRICH_TIMEOUT_MS,
+    leadsMaxResults: process.env.LEADS_MAX_RESULTS,
   });
 
   if (!parsed.success) {
