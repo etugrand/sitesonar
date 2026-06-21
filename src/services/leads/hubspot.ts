@@ -40,6 +40,55 @@ async function listProperties(token: string, f: typeof fetch): Promise<Set<strin
   }
 }
 
+interface PropertyOption {
+  label: string;
+  value: string;
+  displayOrder?: number;
+  hidden?: boolean;
+}
+
+/**
+ * Ensure `value` is a valid option of the `type_contact` enum, creating it if
+ * missing. Returns true if the option is (now) available; false if it could not
+ * be ensured (e.g. missing crm.schemas.contacts.write scope or an API error),
+ * in which case the caller must NOT send the tag — an invalid enum value would
+ * reject the whole contact.
+ */
+async function ensureTypeContactOption(
+  token: string,
+  value: string,
+  label: string,
+  f: typeof fetch,
+): Promise<boolean> {
+  const url = `${API}/crm/v3/properties/contacts/type_contact`;
+  try {
+    const res = await f(url, { headers: { authorization: `Bearer ${token}` } });
+    if (!res.ok) return false;
+    const data = (await res.json()) as { options?: PropertyOption[] };
+    const options = data.options ?? [];
+    if (options.some((o) => o.value === value)) return true;
+
+    // HubSpot replaces the full options list on update, so preserve the
+    // existing ones and append the new option.
+    const clean = options.map((o, i) => ({
+      label: o.label,
+      value: o.value,
+      displayOrder: o.displayOrder ?? i,
+      hidden: o.hidden ?? false,
+    }));
+    clean.push({ label, value, displayOrder: clean.length, hidden: false });
+
+    const patch = await f(url, {
+      method: 'PATCH',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ options: clean }),
+    });
+    return patch.ok;
+  } catch {
+    return false;
+  }
+}
+
 async function searchOne(
   token: string,
   property: string,
@@ -107,10 +156,18 @@ async function createContact(
 export async function pushContacts(args: PushArgs): Promise<PushResult> {
   const f = args.fetchImpl ?? fetch;
   const existingProps = await listProperties(args.token, f);
-  const typeContact =
-    args.industry && existingProps.has('type_contact')
-      ? industryToTag(args.industry).value
-      : undefined;
+
+  // Resolve the type_contact enum value, auto-creating the option if it doesn't
+  // exist yet. Skipped on dryRun (a preview must not mutate the HubSpot schema)
+  // and whenever the option can't be ensured, so we never send an invalid enum
+  // value that would reject the contact.
+  let typeContact: string | undefined;
+  if (!args.dryRun && args.industry && existingProps.has('type_contact')) {
+    const { value, label } = industryToTag(args.industry);
+    if (await ensureTypeContactOption(args.token, value, label, f)) {
+      typeContact = value;
+    }
+  }
 
   const result: PushResult = { created: 0, skipped: 0, failed: 0, results: [] };
 
