@@ -2,7 +2,8 @@ import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
 import type { BrowserPool } from '../browser.js';
 import type { Config } from '../config.js';
-import { composeQuery, MapsBlockedError } from '../services/leads/types.js';
+import { composeQuery, MapsBlockedError, HubspotNotConfiguredError } from '../services/leads/types.js';
+import { pushContacts } from '../services/leads/hubspot.js';
 import { scrapeGoogleMaps } from '../services/leads/maps.js';
 import { enrichLeads } from '../services/leads/enrich.js';
 
@@ -50,6 +51,13 @@ const EnrichBody = z.object({
   verifyMx: z.boolean().default(true),
   headlessFallback: z.boolean().default(true),
   concurrency: z.number().int().min(1).max(10).default(3),
+});
+
+const HubspotBody = z.object({
+  leads: z.array(LeadSchema).min(1).max(500),
+  token: z.string().min(10).optional(),
+  industry: z.string().min(2).max(120).optional(),
+  dryRun: z.boolean().default(false),
 });
 
 export const leadsRoutes =
@@ -156,6 +164,55 @@ export const leadsRoutes =
           warnings,
           enrichedAt: new Date().toISOString(),
         };
+      },
+    );
+
+    app.post(
+      '/v1/leads/hubspot',
+      {
+        schema: {
+          description:
+            'Push enriched leads into HubSpot as contacts. Dedupes by email then phone, creates only custom properties that exist in the account, and auto-creates the type_contact enum option from `industry`. Uses the request `token` or the HUBSPOT_TOKEN env. Set `dryRun=true` to preview without writing.',
+          tags: ['leads'],
+          security: [{ bearerAuth: [] }],
+          body: {
+            type: 'object',
+            required: ['leads'],
+            properties: {
+              leads: { type: 'array', items: { type: 'object' } },
+              token: { type: 'string', minLength: 10 },
+              industry: { type: 'string', minLength: 2, maxLength: 120 },
+              dryRun: { type: 'boolean', default: false },
+            },
+          },
+        },
+      },
+      async (req, reply) => {
+        const parsed = HubspotBody.safeParse(req.body);
+        if (!parsed.success) {
+          return reply.code(400).send({ error: 'bad_request', issues: parsed.error.issues });
+        }
+        const body = parsed.data;
+        const token = body.token ?? deps.config.hubspotToken;
+        try {
+          if (!token) throw new HubspotNotConfiguredError();
+          const result = await pushContacts({
+            token,
+            leads: body.leads,
+            industry: body.industry,
+            dryRun: body.dryRun,
+          });
+          return { ...result, pushedAt: new Date().toISOString() };
+        } catch (err) {
+          if (err instanceof HubspotNotConfiguredError) {
+            return reply.code(503).send({ error: 'hubspot_not_configured', message: err.message });
+          }
+          req.log.warn({ err }, 'leads hubspot push failed');
+          return reply.code(502).send({
+            error: 'hubspot_failed',
+            message: err instanceof Error ? err.message : String(err),
+          });
+        }
       },
     );
   };
