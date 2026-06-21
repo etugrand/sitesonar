@@ -4,6 +4,7 @@ import type { BrowserPool } from '../browser.js';
 import type { Config } from '../config.js';
 import { composeQuery, MapsBlockedError } from '../services/leads/types.js';
 import { scrapeGoogleMaps } from '../services/leads/maps.js';
+import { enrichLeads } from '../services/leads/enrich.js';
 
 interface LeadsDeps {
   browser: BrowserPool;
@@ -22,6 +23,34 @@ const ScrapeBody = z
   .refine((b) => Boolean(b.query) || Boolean(b.industry), {
     message: 'Provide `query` or `industry` (with optional `location`).',
   });
+
+const LeadSchema = z
+  .object({
+    title: z.string(),
+    rating: z.number().optional(),
+    reviewCount: z.number().optional(),
+    phone: z.string().optional(),
+    category: z.string().optional(),
+    address: z.string().optional(),
+    website: z.string().optional(),
+    googleMapsLink: z.string().optional(),
+    email: z.string().optional(),
+    emailConfidence: z.enum(['scraped', 'guessed']).optional(),
+    description: z.string().optional(),
+    linkedin: z.string().optional(),
+    facebook: z.string().optional(),
+    instagram: z.string().optional(),
+    hubspotId: z.string().optional(),
+  })
+  .passthrough();
+
+const EnrichBody = z.object({
+  leads: z.array(LeadSchema).min(1).max(500),
+  guessEmails: z.boolean().default(true),
+  verifyMx: z.boolean().default(true),
+  headlessFallback: z.boolean().default(true),
+  concurrency: z.number().int().min(1).max(10).default(3),
+});
 
 export const leadsRoutes =
   (deps: LeadsDeps): FastifyPluginAsync =>
@@ -82,6 +111,51 @@ export const leadsRoutes =
             message: err instanceof Error ? err.message : String(err),
           });
         }
+      },
+    );
+
+    app.post(
+      '/v1/leads/enrich',
+      {
+        schema: {
+          description:
+            'Enrich leads by crawling each business website for emails, phone, social profiles, and description. Accepts the `leads[]` array returned by /v1/leads/scrape. Falls back to a role-based email guess (MX-verified) when no email is scraped.',
+          tags: ['leads'],
+          security: [{ bearerAuth: [] }],
+          body: {
+            type: 'object',
+            required: ['leads'],
+            properties: {
+              leads: { type: 'array', items: { type: 'object' } },
+              guessEmails: { type: 'boolean', default: true },
+              verifyMx: { type: 'boolean', default: true },
+              headlessFallback: { type: 'boolean', default: true },
+              concurrency: { type: 'integer', minimum: 1, maximum: 10, default: 3 },
+            },
+          },
+        },
+      },
+      async (req, reply) => {
+        const parsed = EnrichBody.safeParse(req.body);
+        if (!parsed.success) {
+          return reply.code(400).send({ error: 'bad_request', issues: parsed.error.issues });
+        }
+        const body = parsed.data;
+        const { leads, warnings } = await enrichLeads({
+          browser: deps.browser,
+          leads: body.leads,
+          guessEmails: body.guessEmails,
+          verifyMx: body.verifyMx,
+          headlessFallback: body.headlessFallback,
+          concurrency: body.concurrency,
+          timeoutMs: deps.config.leadsEnrichTimeoutMs,
+        });
+        return {
+          count: leads.length,
+          leads,
+          warnings,
+          enrichedAt: new Date().toISOString(),
+        };
       },
     );
   };
