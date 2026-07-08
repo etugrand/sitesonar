@@ -115,17 +115,27 @@ export async function analyzeStructuredData(html: string): Promise<SchemaReport>
         }
         if (node && typeof node === 'object') {
           const obj = node as Record<string, unknown>;
+          // Unwrap schema.org's @graph container so each entity (Organization,
+          // SoftwareApplication, FAQPage, …) is detected individually instead
+          // of the wrapper reading as a single "Unknown" block.
+          if (Array.isArray(obj['@graph'])) {
+            (obj['@graph'] as unknown[]).forEach(collect);
+          }
           const type = obj['@type'];
-          items.push({
-            type:
-              typeof type === 'string'
-                ? type
-                : Array.isArray(type)
-                  ? type.join(',')
-                  : 'Unknown',
-            raw: obj,
-            errors: [],
-          });
+          // Only emit real entities (those with an @type). A bare @graph/@context
+          // wrapper has no type and should not count as an "Unknown" schema.
+          if (type !== undefined) {
+            items.push({
+              type:
+                typeof type === 'string'
+                  ? type
+                  : Array.isArray(type)
+                    ? type.join(',')
+                    : 'Unknown',
+              raw: obj,
+              errors: [],
+            });
+          }
         }
       };
       collect(parsed);
