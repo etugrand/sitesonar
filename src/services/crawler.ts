@@ -6,6 +6,18 @@ import {
   type PageMetadata,
 } from './extract.js';
 import type { PlaywrightProxy } from '../proxy.js';
+import { Semaphore } from '../limiter.js';
+
+/**
+ * Global cap on concurrent crawls. Each crawl launches its own PlaywrightCrawler
+ * (its own browser + up to `concurrency` pages), so several large crawls at once
+ * can fork a browser-process explosion and OOM the service. Extra crawls queue
+ * here (the job is already accepted and stays "running" until it gets a slot).
+ * Override with CRAWL_MAX_CONCURRENCY.
+ */
+const crawlLimiter = new Semaphore(
+  Math.max(1, Number(process.env.CRAWL_MAX_CONCURRENCY ?? 2)),
+);
 
 export interface CrawlPage {
   url: string;
@@ -58,6 +70,10 @@ function emptyMetadata(): PageMetadata {
  * RequestQueue per invocation so concurrent /crawl jobs don't collide.
  */
 export async function runCrawl(opts: CrawlOptions): Promise<CrawlResult> {
+  return crawlLimiter.run(() => runCrawlInner(opts));
+}
+
+async function runCrawlInner(opts: CrawlOptions): Promise<CrawlResult> {
   const start = new URL(opts.startUrl);
   const origin = start.origin;
   const pages: CrawlPage[] = [];

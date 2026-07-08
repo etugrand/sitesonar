@@ -1,5 +1,6 @@
 import { resolveMx as nodeResolveMx } from 'node:dns/promises';
 import type { BrowserPool } from '../../browser.js';
+import { readTextCapped } from '../../http-limits.js';
 import { Lead } from './types.js';
 import {
   extractEmails,
@@ -47,7 +48,7 @@ async function fetchStatic(url: string, timeoutMs: number): Promise<string> {
       headers: { 'user-agent': 'Mozilla/5.0 (compatible; sitesonar-leads/1.0)' },
     });
     if (!res.ok) return '';
-    return await res.text();
+    return await readTextCapped(res);
   } catch {
     return '';
   } finally {

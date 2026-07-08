@@ -47,7 +47,15 @@ const plugin: FastifyPluginAsync<RateLimitOptions> = async (app, opts) => {
     const key = `${PREFIX}${keyId}:${window}`;
     // Generous TTL slack (window + 10s) avoids a counter expiring mid-window
     // due to clock drift between app and Redis.
-    const count = await opts.kv.incr(key, WINDOW_SECONDS + 10);
+    // Fail OPEN: if the store is unreachable (e.g. Redis dies after boot), do
+    // not 500 every request — skip rate limiting and let the call through.
+    let count: number;
+    try {
+      count = await opts.kv.incr(key, WINDOW_SECONDS + 10);
+    } catch (err) {
+      req.log.warn({ err }, 'rate-limit store unavailable — allowing request (fail-open)');
+      return;
+    }
 
     const remaining = Math.max(0, opts.limitPerMin - count);
     const reset = (window + 1) * WINDOW_SECONDS;

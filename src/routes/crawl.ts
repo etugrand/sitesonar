@@ -59,37 +59,45 @@ export const crawlRoutes =
         const body = parsed.data;
         const job = await deps.jobs.create<CrawlResult>();
 
-        // Fire and forget. Errors land on the job record.
+        // Fire and forget. Errors land on the job record. EVERY await in here
+        // is guarded — a detached rejection (e.g. a Redis write during a blip)
+        // must never escape and crash the process for all consumers.
         void (async () => {
-          await deps.jobs.markRunning(job.id);
-          let processed = 0;
           try {
-            const result = await runCrawl({
-              startUrl: body.startUrl,
-              maxRequests: body.maxRequests ?? deps.config.crawlMaxRequests,
-              concurrency: body.concurrency ?? deps.config.crawlDefaultConcurrency,
-              sameOriginOnly: body.sameOriginOnly,
-              proxy: deriveProxy(deps.config),
-              onPage(page) {
-                processed += 1;
-                void deps.jobs.updateProgress(job.id, processed);
-                req.log.debug(`Crawled ${page.url}`);
-              },
-            });
-            await deps.jobs.markSucceeded(job.id, result);
+            await deps.jobs.markRunning(job.id);
+            let processed = 0;
+            try {
+              const result = await runCrawl({
+                startUrl: body.startUrl,
+                maxRequests: body.maxRequests ?? deps.config.crawlMaxRequests,
+                concurrency: body.concurrency ?? deps.config.crawlDefaultConcurrency,
+                sameOriginOnly: body.sameOriginOnly,
+                proxy: deriveProxy(deps.config),
+                onPage(page) {
+                  processed += 1;
+                  void deps.jobs.updateProgress(job.id, processed).catch(() => {});
+                  req.log.debug(`Crawled ${page.url}`);
+                },
+              });
+              await deps.jobs.markSucceeded(job.id, result);
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              req.log.warn({ err }, `crawl ${job.id} failed`);
+              await deps.jobs.markFailed(job.id, msg).catch((e) =>
+                req.log.error({ err: e }, `crawl ${job.id}: markFailed also failed`),
+              );
+            }
+            if (body.webhookUrl) {
+              const finalJob = await deps.jobs.get(job.id);
+              void dispatchWebhook({
+                url: body.webhookUrl,
+                payload: finalJob,
+                secret: deps.config.webhookSecret,
+                logger: req.log,
+              });
+            }
           } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            req.log.warn({ err }, `crawl ${job.id} failed`);
-            await deps.jobs.markFailed(job.id, msg);
-          }
-          if (body.webhookUrl) {
-            const finalJob = await deps.jobs.get(job.id);
-            void dispatchWebhook({
-              url: body.webhookUrl,
-              payload: finalJob,
-              secret: deps.config.webhookSecret,
-              logger: req.log,
-            });
+            req.log.error({ err }, `crawl ${job.id}: orchestration error`);
           }
         })();
 

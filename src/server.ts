@@ -1,4 +1,4 @@
-import Fastify from 'fastify';
+import Fastify, { type FastifyError } from 'fastify';
 import swagger from '@fastify/swagger';
 import swaggerUi from '@fastify/swagger-ui';
 
@@ -38,6 +38,27 @@ async function main(): Promise<void> {
     },
     bodyLimit: 5 * 1024 * 1024, // 5MB
     trustProxy: true,
+  });
+
+  // Consistent JSON error shape + logging for anything that throws in a handler.
+  app.setErrorHandler((err: FastifyError, req, reply) => {
+    const status = err.statusCode && err.statusCode >= 400 ? err.statusCode : 500;
+    if (status >= 500) req.log.error({ err }, 'request handler error');
+    else req.log.warn({ err }, 'request error');
+    reply.code(status).send({
+      error: status >= 500 ? 'internal_error' : (err.code ?? 'error'),
+      message: err.message,
+    });
+  });
+
+  // Last-resort process guards. A detached (fire-and-forget) rejection — e.g. a
+  // Redis write in the crawl job during a blip — would otherwise crash Node and
+  // take the whole API down for every consumer. Log and keep serving instead.
+  process.on('unhandledRejection', (reason) => {
+    app.log.error({ err: reason }, 'unhandledRejection (suppressed — service kept alive)');
+  });
+  process.on('uncaughtException', (err) => {
+    app.log.error({ err }, 'uncaughtException (suppressed — service kept alive)');
   });
 
   // OpenAPI + Swagger UI
@@ -139,7 +160,7 @@ async function main(): Promise<void> {
   });
 
   // Routes
-  await app.register(healthRoutes({ jobs, startedAt, config }));
+  await app.register(healthRoutes({ jobs, startedAt, config, browser }));
   await app.register(scrapeRoutes({ browser, config, kv }));
   await app.register(screenshotRoutes({ browser, config }));
   await app.register(auditPageRoutes({ browser, config }));

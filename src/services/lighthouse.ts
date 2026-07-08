@@ -1,6 +1,17 @@
 import { launch, type LaunchedChrome } from 'chrome-launcher';
 import lighthouseImport from 'lighthouse';
 import { chromium } from 'playwright';
+import { Semaphore } from '../limiter.js';
+
+/**
+ * Global cap on concurrent Lighthouse runs. Each run forks its own Chrome
+ * (CPU/RAM-heavy), independent of the browser pool, so without this a burst of
+ * /audit-page calls within the rate limit could fork enough Chromes to OOM the
+ * whole service. Override with LIGHTHOUSE_MAX_CONCURRENCY.
+ */
+const lighthouseLimiter = new Semaphore(
+  Math.max(1, Number(process.env.LIGHTHOUSE_MAX_CONCURRENCY ?? 2)),
+);
 
 /**
  * Lighthouse spawns its own Chrome via chrome-launcher, which searches
@@ -85,6 +96,14 @@ export async function runLighthouse(
   url: string,
   preset: LighthousePreset = 'mobile',
   timeoutMs = 90_000,
+): Promise<LighthouseAudit> {
+  return lighthouseLimiter.run(() => runLighthouseInner(url, preset, timeoutMs));
+}
+
+async function runLighthouseInner(
+  url: string,
+  preset: LighthousePreset,
+  timeoutMs: number,
 ): Promise<LighthouseAudit> {
   let chrome: LaunchedChrome | null = null;
   try {

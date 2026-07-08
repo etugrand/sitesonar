@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Config } from '../config.js';
 import { resolveSitemap, type SitemapFetcher } from '../services/sitemap.js';
 import { parseRobots } from '../services/robots.js';
+import { readTextCapped } from '../http-limits.js';
 
 const SitemapBody = z.object({
   url: z.string().url(),
@@ -24,7 +25,9 @@ function buildFetcher(timeout: number): SitemapFetcher {
     try {
       const res = await fetch(url, { redirect: 'follow', signal: controller.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status} for ${url}`);
-      return await res.text();
+      // Cap the body: a huge sitemap would otherwise be buffered fully and then
+      // parsed synchronously, stalling the event loop for every other request.
+      return await readTextCapped(res);
     } finally {
       clearTimeout(t);
     }
