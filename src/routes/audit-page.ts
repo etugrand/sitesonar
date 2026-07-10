@@ -11,6 +11,9 @@ const AuditBody = z.object({
   url: z.string().url(),
   preset: z.enum(['mobile', 'desktop']).default('mobile'),
   skipLighthouse: z.boolean().default(false),
+  // Return the rendered HTML so callers can extract signals our normalized
+  // metadata omits (hreflang link tags, etc). Off by default (+payload).
+  includeHtml: z.boolean().default(false),
   timeoutMs: z.number().int().positive().max(180_000).optional(),
 });
 
@@ -37,6 +40,7 @@ export const auditPageRoutes =
               url: { type: 'string', format: 'uri' },
               preset: { type: 'string', enum: ['mobile', 'desktop'], default: 'mobile' },
               skipLighthouse: { type: 'boolean', default: false },
+              includeHtml: { type: 'boolean', default: false },
               timeoutMs: { type: 'integer', minimum: 1, maximum: 180_000 },
             },
           },
@@ -108,6 +112,7 @@ export const auditPageRoutes =
           lighthouse,
           lighthouseError,
           auditedAt: new Date().toISOString(),
+          ...(body.includeHtml ? { html } : {}),
         };
       },
     );
