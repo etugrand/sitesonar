@@ -18,7 +18,7 @@ const CommonBody = z.object({
   html: z.string().optional(),
   waitUntil: z
     .enum(['load', 'domcontentloaded', 'networkidle', 'commit'])
-    .default('networkidle'),
+    .default('load'),
   waitForSelector: z.string().optional(),
   userAgent: z.string().optional(),
   timeoutMs: z.number().int().positive().max(180_000).optional(),
@@ -116,7 +116,7 @@ export const exportRoutes =
               waitUntil: {
                 type: 'string',
                 enum: ['load', 'domcontentloaded', 'networkidle', 'commit'],
-                default: 'networkidle',
+                default: 'load',
               },
               waitForSelector: { type: 'string' },
               userAgent: { type: 'string' },
@@ -227,7 +227,7 @@ export const exportRoutes =
               waitUntil: {
                 type: 'string',
                 enum: ['load', 'domcontentloaded', 'networkidle', 'commit'],
-                default: 'networkidle',
+                default: 'load',
               },
               waitForSelector: { type: 'string' },
               userAgent: { type: 'string' },

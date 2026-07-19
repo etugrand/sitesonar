@@ -11,7 +11,7 @@ const ExtractBody = z.object({
   url: z.string().url(),
   waitUntil: z
     .enum(['load', 'domcontentloaded', 'networkidle', 'commit'])
-    .default('networkidle'),
+    .default('load'),
   waitForSelector: z.string().optional(),
   userAgent: z.string().optional(),
   timeoutMs: z.number().int().positive().max(120_000).optional(),
@@ -51,7 +51,7 @@ export const extractRoutes =
               waitUntil: {
                 type: 'string',
                 enum: ['load', 'domcontentloaded', 'networkidle', 'commit'],
-                default: 'networkidle',
+                default: 'load',
               },
               waitForSelector: { type: 'string' },
               userAgent: { type: 'string' },

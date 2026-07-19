@@ -63,7 +63,12 @@ export const auditPageRoutes =
         try {
           const page = await context.newPage();
           const response = await page.goto(body.url, {
-            waitUntil: 'networkidle',
+            // 'load', not 'networkidle': networkidle never fires on sites with
+            // continuous background requests (analytics, chat widgets, lazy
+            // media, ads), so every such page.goto burned the full timeout and
+            // returned 502. 'load' resolves when the page's resources finish,
+            // independent of ongoing XHR — the render we need for SEO metadata.
+            waitUntil: 'load',
             timeout: Math.min(timeout, deps.config.scrapeTimeoutMs),
           });
           html = await page.content();

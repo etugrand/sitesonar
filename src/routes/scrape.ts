@@ -15,7 +15,7 @@ const ScrapeBody = z.object({
   url: z.string().url(),
   waitUntil: z
     .enum(['load', 'domcontentloaded', 'networkidle', 'commit'])
-    .default('networkidle'),
+    .default('load'),
   waitForSelector: z.string().optional(),
   includeHtml: z.boolean().default(false),
   includeMarkdown: z.boolean().default(true),
@@ -55,7 +55,7 @@ export const scrapeRoutes =
               waitUntil: {
                 type: 'string',
                 enum: ['load', 'domcontentloaded', 'networkidle', 'commit'],
-                default: 'networkidle',
+                default: 'load',
               },
               waitForSelector: { type: 'string' },
               includeHtml: { type: 'boolean', default: false },

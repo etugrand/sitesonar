@@ -9,7 +9,7 @@ const ScreenshotBody = z.object({
   fullPage: z.boolean().default(false),
   format: z.enum(['png', 'jpeg']).default('png'),
   quality: z.number().int().min(1).max(100).optional(),
-  waitUntil: z.enum(['load', 'domcontentloaded', 'networkidle']).default('networkidle'),
+  waitUntil: z.enum(['load', 'domcontentloaded', 'networkidle']).default('load'),
   waitForSelector: z.string().optional(),
   timeoutMs: z.number().int().positive().max(60_000).optional(),
   asBase64: z.boolean().default(false),
@@ -49,7 +49,7 @@ export const screenshotRoutes =
               waitUntil: {
                 type: 'string',
                 enum: ['load', 'domcontentloaded', 'networkidle'],
-                default: 'networkidle',
+                default: 'load',
               },
               waitForSelector: { type: 'string' },
               timeoutMs: { type: 'integer', minimum: 1, maximum: 60_000 },
