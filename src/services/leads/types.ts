@@ -15,6 +15,11 @@ export interface Lead {
   address?: string;
   website?: string;
   googleMapsLink?: string;
+  // Sourcing intelligence (added by /scrape only when `signals` is requested)
+  /** The one intent signal that surfaced this lead (see signals.ts), or null. */
+  signal?: string | null;
+  /** 0-100 relevance: ICP fit + signal strength. */
+  score?: number;
   // Added by /enrich
   email?: string;
   emailConfidence?: 'scraped' | 'guessed';

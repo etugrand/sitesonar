@@ -7,6 +7,7 @@ import { pushContacts } from '../services/leads/hubspot.js';
 import { scrapeGoogleMaps } from '../services/leads/maps.js';
 import { scrapeOverpass, mergeByTitle } from '../services/leads/overpass.js';
 import { runDirectories, mergeContacts, listDirectories } from '../services/leads/directories/registry.js';
+import { tagLeads, filterByReviews, SIGNAL_KEYS } from '../services/leads/signals.js';
 import { enrichLeads } from '../services/leads/enrich.js';
 
 interface LeadsDeps {
@@ -26,6 +27,9 @@ const ScrapeBody = z
     osmFallback: z.boolean().default(true),
     overpassUrl: z.string().url().optional(),
     directories: z.boolean().default(true),
+    signals: z.array(z.enum(SIGNAL_KEYS)).optional(),
+    minReviews: z.number().int().min(0).optional(),
+    maxReviews: z.number().int().min(0).optional(),
   })
   .refine((b) => Boolean(b.query) || Boolean(b.industry), {
     message: 'Provide `query` or `industry` (with optional `location`).',
@@ -42,6 +46,8 @@ const LeadSchema = z
     address: z.string().optional(),
     website: z.string().optional(),
     googleMapsLink: z.string().optional(),
+    signal: z.string().nullish(),
+    score: z.number().optional(),
     email: z.string().optional(),
     emailConfidence: z.enum(['scraped', 'guessed']).optional(),
     description: z.string().optional(),
@@ -91,6 +97,9 @@ export const leadsRoutes =
               osmFallback: { type: 'boolean', default: true, description: 'Top up from OpenStreetMap when Google Maps returns fewer than `max` results or is blocked. Needs `industry` + `location`.' },
               overpassUrl: { type: 'string', format: 'uri', description: 'Override the Overpass endpoint used for the OSM fallback (default rotates public mirrors).' },
               directories: { type: 'boolean', default: true, description: 'Also pull matching professional directories (bar registries, etc.) — named people with real emails. Auto-selected by `industry` + `location`; see GET /v1/leads/directories. Set false to disable.' },
+              signals: { type: 'array', items: { type: 'string', enum: [...SIGNAL_KEYS] }, description: 'Intent signals to evaluate. Each result gains `signal` (the one that surfaced it, or null) + `score` (0-100 ICP fit + signal strength). Needs `details: true` for website/reviewCount-based signals. Omit to skip scoring entirely (backward compatible).' },
+              minReviews: { type: 'integer', minimum: 0, description: 'ICP floor: drop leads with a known reviewCount below this. Unknown reviewCount passes.' },
+              maxReviews: { type: 'integer', minimum: 0, description: 'ICP ceiling: drop leads with a known reviewCount above this. Unknown reviewCount passes.' },
             },
           },
         },
@@ -187,6 +196,20 @@ export const leadsRoutes =
             warnings.push(`osm fallback failed: ${err instanceof Error ? err.message : String(err)}`);
             req.log.warn({ err }, 'leads osm fallback failed');
           }
+        }
+
+        // 4) ICP band + intent-signal scoring (Task 1). ICP filter first so we
+        // don't score leads we're about to drop. Both no-op unless requested.
+        if (body.minReviews != null || body.maxReviews != null) {
+          const before = leads.length;
+          leads = filterByReviews(leads, body.minReviews, body.maxReviews);
+          if (leads.length < before) warnings.push(`dropped ${before - leads.length} lead(s) outside the review band`);
+        }
+        if (body.signals?.length) {
+          // website/reviewCount live in the detail panel — without details these
+          // signals fire on absent data (e.g. no_website for every list-view lead).
+          if (!body.details) warnings.push('signals requested without `details: true`; website/review-based signals may be unreliable');
+          leads = tagLeads(leads, { signals: body.signals });
         }
 
         return {
